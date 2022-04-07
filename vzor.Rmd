@@ -1,0 +1,369 @@
+---
+title: "Analýza klíčových slov v R"
+subtitle: "Praktický příklad pro SEO Restart 2022"
+author: Marek Prokop
+output: html_notebook
+---
+
+# Téma klíčových slov
+
+Učím se hrát na foukací harmoniku, a proto jsem se rozhodl udělat cvičnou klíčovku na tohle téma.
+
+## Startovací slova
+
+Za startovací slova jsem zvolil nejprve (první soubor):
+
+harmonika
+foukací harmonika
+foukačka
+hohner
+
+A pak ještě (druhý soubor):
+
+marine band
+hohner rocket
+hohner crossover
+special  20
+seydel
+
+# Příprava dat k analýze
+
+## Instalace
+
+Na konkrétním stroji je potřeba jen poprvé.
+
+```r
+install.packages("devtools")
+devtools::install_github("MarekProkop/keywordr")
+```
+
+
+## Načtení balíčků
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(clipr)
+library(keywordr)
+```
+
+## Objekt `kwresearch`
+
+```{r}
+kwr <- kwresearch()
+```
+
+## Import dat z Marketing Mineru
+
+```{r}
+kwr <- kwr |> 
+  kwr_import_mm(path = "data-raw/mm-files/")
+```
+
+## Prohlídka vstupních dat
+
+### Summary
+
+```{r}
+kwr |> kwr_summary()
+```
+
+### Zdrojové dotazy
+
+```{r}
+kwr |> kwr_source_queries() |> 
+  arrange(desc(volume), query)
+```
+
+Zdrojové dotazy dotazy jde filtrovat regulárním výrazem.
+
+```{r}
+kwr |> kwr_source_queries(q = "tahac[íi]") |> 
+  arrange(desc(volume), query)
+```
+
+### Vyčištěné a normalizované dotazy
+
+```{r}
+kwr |> kwr_clean_queries()
+```
+
+Vyčištěné a normalizované dotazy jde taky filtrovat podle dotazu.
+
+```{r}
+kwr |> kwr_clean_queries(q = "^jak")
+```
+
+#### Jak funguje deduplikace a normalizace
+
+Ve zdrojových dotazech (export z Marketing Mineru) jsou mj. tyto řádky:
+
+```{r echo=FALSE, rows.print=20}
+kwr |> kwr_source_queries() |> 
+  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$"))
+```
+
+Ty se nejprve deduplikují, což znamená, že se odstaraní duplicity, které se liší jen startovací frází ve sloupci *input*.
+
+```{r echo=FALSE}
+kwr |> kwr_source_queries() |> 
+  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
+  group_by(query, source) |> 
+  summarise(
+    input = paste(input, collapse = ","),
+    volume = last(volume),
+    cpc = last(cpc),
+    .groups = "drop"
+  ) |> 
+  relocate(input, .after = query)
+```
+
+Pak se sečtou hledanosti a zprůměrují CPC (váženým průměrem) za jednotlivé dotazy lišící se jen vyhledavačem ve sloupci *source*.
+
+```{r echo=FALSE}
+kwr |> kwr_source_queries() |> 
+  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
+  group_by(query, source) |> 
+  summarise(
+    input = paste(input, collapse = ","),
+    volume = last(volume),
+    cpc = last(cpc),
+    .groups = "drop"
+  ) |> 
+  relocate(input, .after = query) |> 
+  group_by(query) |> 
+  summarise(
+    input = first(input),
+    source = paste(source, collapse = ","),
+    cpc = weighted.mean(cpc, volume),
+    volume = sum(volume),
+    .groups = "drop"
+  ) |> 
+  relocate(cpc, .after = volume)
+```
+
+A nakonec se vybere preferovaný dotaz (dost složitě), sečte se hledanost a zprůměruje CPC.
+
+```{r echo=FALSE}
+kwr |> kwr_source_queries() |> 
+  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
+  group_by(query, source) |> 
+  summarise(
+    input = paste(input, collapse = ","),
+    volume = last(volume),
+    cpc = last(cpc),
+    .groups = "drop"
+  ) |> 
+  relocate(input, .after = query) |> 
+  group_by(query) |> 
+  summarise(
+    input = first(input),
+    source = paste(source, collapse = ","),
+    cpc = weighted.mean(cpc, volume),
+    volume = sum(volume),
+    .groups = "drop"
+  ) |> 
+  relocate(cpc, .after = volume) |> 
+  summarise(
+    query = first(query, order_by = desc(volume)),
+    input = first(input),
+    source = first(source),
+    cpc = weighted.mean(cpc, volume),
+    volume = sum(volume)
+  ) |> 
+  relocate(cpc, .after = volume)
+```
+
+V normalizovaných dotazech tomu odpovídá:
+
+```{r echo=FALSE}
+kwr |> kwr_clean_queries() |> 
+  filter(query_normalized == "foukací harmonika")
+```
+
+
+# Úkol č. 1: vyřadit nerelevantní dotazy
+
+Nejprve chci vyřadit nerelevantní dotazy. Nemusím hned všechny, ale čím víc jich vyřadím, tím líp se mi bude dál pracovat.
+
+## Příliš dlouhé dotazy
+
+V datasetech bývají hodně dlouhé dotazy, které nemají pro klíčovku smysl. Nejprve si je zobrazím a vyladím délku.
+
+```{r}
+kwr |> kwr_long_queries(longer_than = 70)
+```
+
+Pak je zruším.
+
+```{r}
+kwr <- kwr |> 
+  kwr_prune_long_queries(longer_than = 70)
+```
+
+
+## Vzorce nerelevantních dotazů
+
+V Poddotazech, kolokacích a n-gramech hledám typické vzorce, které charakterizují nerelevantní dotazy. Jednotlivé výpisy si můžu otevřít v novém okně na druhém monitoru, takže se vzorce snadno vybírají.
+
+## N-gramy
+
+```{r}
+kwr |> 
+  kwr_ngrams(
+    min_words = 1, max_words = 4, 
+    min_n = 2, min_volume = 1, 
+    remove_nested = TRUE
+  ) |> 
+  kwr_remove_stopwords()
+```
+
+## Poddotazy (subqueries)
+
+```{r}
+kwr |> kwr_subqueries()
+```
+
+## Kolokace
+
+```{r}
+kwr |> kwr_collocations()
+```
+
+## Průzkum konkrétních dotazů obsahujících text resp. regex
+
+```{r}
+kwr |> kwr_queries("marine band crossover")
+```
+
+
+# Úkol č. 1: vyřadit nerelevantní dotazy
+
+V Poddotazech, kolokacích a n-gramech hledám typické vzorce, které charakterizují nerelevantní dotazy. Jednotlivé výpisy si můžu otevřít v novém okně na druhém monitoru, takže se vzorce snadno vybírají. Na první pohled to jsou např. slova či fráze:
+
+...
+
+Postupně tato slova projdu, odvodím z nich vhodné regulární výrazy, ty ověřím funkcí `kwr_test_regex` a sestavím pravidla pro vyřazení nerelevantních dotazů.
+
+```{r}
+base_pattern <- "delici"
+and <- NULL
+except <- NULL
+full_pattern <- kwr_build_regex(base_pattern, and)
+kwr |> kwr_test_regex(full_pattern, except = except)
+full_pattern_quoted <- paste0('"', str_replace_all(full_pattern, fixed("\\"), "\\\\"), '"')
+write_clip(full_pattern_quoted)
+```
+
+Pokud pattern odpovídá mým záměrům, přidám ho do prune.yml a provedu pruning.
+
+```{r}
+kwr_add_pattern(full_pattern, recipe_file = "recipes/prune.yml", recipe_type = "remove")
+kwr <- kwr |> 
+  kwr_prune("recipes/prune.yml")
+```
+
+
+# Klasifikace
+
+## Pruning
+
+Před klasifikací spustím `kwr_prune`, abych odstranil nerelevantní dotazy.
+
+```{r}
+kwr <- kwr |> 
+  kwr_prune("recipes/prune.yml")
+```
+
+## Poddotazy (subqueries)
+
+```{r}
+kwr |> kwr_subqueries()
+```
+
+## Kolokace
+
+```{r}
+kwr |> kwr_collocations()
+```
+
+## N-gramy
+
+```{r}
+kwr |> 
+  kwr_ngrams(
+    min_words = 1, max_words = 4, 
+    min_n = 2, min_volume = 1, 
+    remove_nested = TRUE
+  ) |> 
+  kwr_remove_stopwords()
+```
+## Průzkum konkrétních dotazů obsahujících text resp. regex
+
+```{r}
+kwr |> kwr_queries("marine band crossover")
+```
+
+## Sestavení pravidel
+
+Nyní opět projdu poddotazy, kolokace a n-gramy, vyhledám vhodné vzorce a ověřím je.
+
+```{r}
+base_pattern <- "thunderbird"
+and <- NULL
+except <- NULL
+full_pattern <- kwr_build_regex(base_pattern, and)
+kwr |> kwr_test_regex(full_pattern, except = except)
+full_pattern_quoted <- paste0('"', str_replace_all(full_pattern, fixed("\\"), "\\\\"), '"')
+write_clip(full_pattern_quoted)
+```
+
+Zvolený vzorec můžu opět zapsat do YAMLu.
+
+```{r}
+yaml_file_name <- "recipes/model.yml"
+label_name <- "model"
+label_value <- NULL
+
+kwr_add_pattern(
+  pattern = full_pattern, 
+  recipe_file = yaml_file_name,
+  recipe_type = "label",
+  dim_name = label_name,
+  value = label_value
+)
+```
+
+
+```{r}
+kwr <- kwr |> 
+  kwr_classify(yaml_file_name)
+kwr |> kwr_dimension_table(model)
+```
+
+```{r}
+kwr |> kwr_classified_queries("marine band") |> select(1:2)
+```
+
+
+Úplná klasifikace
+
+```{r}
+kwr <- kwr |> 
+  kwr_classify("recipes/brand.yml") |> 
+  kwr_classify("recipes/model.yml")
+```
+
+```{r}
+kwr |> kwr_summary()
+```
+
+```{r}
+kwr |> kwr_queries()
+```
+
+```{r}
+kwr |> 
+  kwr_unclassified_queries() |> 
+  kwr_ngrams()
+```

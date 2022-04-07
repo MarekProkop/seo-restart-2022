@@ -1,0 +1,23 @@
+- type: label
+  name: model
+  rules:
+  - match:
+    - special 20
+    - blues harp
+    - golden melody
+    - crossover
+    - big river
+    - rocket
+    - session steel
+    - thunderbird
+  values:
+  - value: marine band
+    rules:
+    - match: marine band
+      except:
+      - crossover
+      - de ?luxe
+      - thunderbird
+  - value: marine band deluxe
+    rules:
+    - match: marine band de ?luxe

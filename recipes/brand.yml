@@ -1,0 +1,11 @@
+- type: label
+  name: brand
+  rules:
+  - match:
+    - hohner
+    - seydel
+    - suzuki
+  values:
+  - value: lee oskar
+    rules:
+    - match: os[kc]ar

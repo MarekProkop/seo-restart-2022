@@ -1,0 +1,57 @@
+- type: remove
+  rules:
+  - match:
+    - akk?ordeon
+    - tahac[íi]
+    - steirische
+    - verdi
+    - melodica
+    - bravo
+    - kl[áa]vesov
+    - heligonk
+    - '[šs]ipk'
+    - club
+    - atlantic
+    - pi[áa]no
+    - kytar
+    - seydlovo
+    - posp[íi][šs]ilov
+    - knofl[íi]kov
+    - pen[zs]i[óo]n
+    - fl[ée]tn
+    - seydlov[áa]
+    - su[šs][áa]k
+    - dve[řr][eíi]
+    - beznoskov[áa]
+    - student
+    - hw
+    - morino
+    - concerto
+    - rockwood
+    - amica
+    - atomik
+    - cold\b
+    - gebraucht
+    - clavinet
+    - accordion
+    - raven
+    - do fouka[čc]e?k
+    - royal
+    - \d+ ?bas
+    - fouka[čc]k
+    - ksicht
+    - guitar
+    - amur
+    - baits
+    - klav[íi]r
+    - string
+    - zden[ěe]k seydl
+    - maestro
+    - pe[čc]en
+    - höhne
+    - bass
+    - zden[ěe]k
+    - autobus
+    - seydl
+    - heligon
+    - delici
