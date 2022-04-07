@@ -42,8 +42,6 @@ devtools::install_github("MarekProkop/keywordr")
 
 ```{r}
 library(tidyverse)
-library(tidytext)
-library(clipr)
 library(keywordr)
 ```
 
@@ -92,93 +90,6 @@ Vyčištěné a normalizované dotazy jde taky filtrovat podle dotazu.
 
 ```{r}
 kwr |> kwr_clean_queries(q = "^jak")
-```
-
-#### Jak funguje deduplikace a normalizace
-
-Ve zdrojových dotazech (export z Marketing Mineru) jsou mj. tyto řádky:
-
-```{r echo=FALSE, rows.print=20}
-kwr |> kwr_source_queries() |> 
-  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$"))
-```
-
-Ty se nejprve deduplikují, což znamená, že se odstaraní duplicity, které se liší jen startovací frází ve sloupci *input*.
-
-```{r echo=FALSE}
-kwr |> kwr_source_queries() |> 
-  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
-  group_by(query, source) |> 
-  summarise(
-    input = paste(input, collapse = ","),
-    volume = last(volume),
-    cpc = last(cpc),
-    .groups = "drop"
-  ) |> 
-  relocate(input, .after = query)
-```
-
-Pak se sečtou hledanosti a zprůměrují CPC (váženým průměrem) za jednotlivé dotazy lišící se jen vyhledavačem ve sloupci *source*.
-
-```{r echo=FALSE}
-kwr |> kwr_source_queries() |> 
-  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
-  group_by(query, source) |> 
-  summarise(
-    input = paste(input, collapse = ","),
-    volume = last(volume),
-    cpc = last(cpc),
-    .groups = "drop"
-  ) |> 
-  relocate(input, .after = query) |> 
-  group_by(query) |> 
-  summarise(
-    input = first(input),
-    source = paste(source, collapse = ","),
-    cpc = weighted.mean(cpc, volume),
-    volume = sum(volume),
-    .groups = "drop"
-  ) |> 
-  relocate(cpc, .after = volume)
-```
-
-A nakonec se vybere preferovaný dotaz (dost složitě), sečte se hledanost a zprůměruje CPC.
-
-```{r echo=FALSE}
-kwr |> kwr_source_queries() |> 
-  filter(str_detect(query, "^(foukac[íi] harmonika|harmonika foukac[íi])$")) |> 
-  group_by(query, source) |> 
-  summarise(
-    input = paste(input, collapse = ","),
-    volume = last(volume),
-    cpc = last(cpc),
-    .groups = "drop"
-  ) |> 
-  relocate(input, .after = query) |> 
-  group_by(query) |> 
-  summarise(
-    input = first(input),
-    source = paste(source, collapse = ","),
-    cpc = weighted.mean(cpc, volume),
-    volume = sum(volume),
-    .groups = "drop"
-  ) |> 
-  relocate(cpc, .after = volume) |> 
-  summarise(
-    query = first(query, order_by = desc(volume)),
-    input = first(input),
-    source = first(source),
-    cpc = weighted.mean(cpc, volume),
-    volume = sum(volume)
-  ) |> 
-  relocate(cpc, .after = volume)
-```
-
-V normalizovaných dotazech tomu odpovídá:
-
-```{r echo=FALSE}
-kwr |> kwr_clean_queries() |> 
-  filter(query_normalized == "foukací harmonika")
 ```
 
 
@@ -241,18 +152,18 @@ kwr |> kwr_queries("marine band crossover")
 
 V Poddotazech, kolokacích a n-gramech hledám typické vzorce, které charakterizují nerelevantní dotazy. Jednotlivé výpisy si můžu otevřít v novém okně na druhém monitoru, takže se vzorce snadno vybírají. Na první pohled to jsou např. slova či fráze:
 
-...
+akordeon
+tahací
+kytara
 
 Postupně tato slova projdu, odvodím z nich vhodné regulární výrazy, ty ověřím funkcí `kwr_test_regex` a sestavím pravidla pro vyřazení nerelevantních dotazů.
 
 ```{r}
-base_pattern <- "delici"
+base_pattern <- "akordeon"
 and <- NULL
 except <- NULL
 full_pattern <- kwr_build_regex(base_pattern, and)
 kwr |> kwr_test_regex(full_pattern, except = except)
-full_pattern_quoted <- paste0('"', str_replace_all(full_pattern, fixed("\\"), "\\\\"), '"')
-write_clip(full_pattern_quoted)
 ```
 
 Pokud pattern odpovídá mým záměrům, přidám ho do prune.yml a provedu pruning.
@@ -314,8 +225,6 @@ and <- NULL
 except <- NULL
 full_pattern <- kwr_build_regex(base_pattern, and)
 kwr |> kwr_test_regex(full_pattern, except = except)
-full_pattern_quoted <- paste0('"', str_replace_all(full_pattern, fixed("\\"), "\\\\"), '"')
-write_clip(full_pattern_quoted)
 ```
 
 Zvolený vzorec můžu opět zapsat do YAMLu.
@@ -346,10 +255,12 @@ kwr |> kwr_classified_queries("marine band") |> select(1:2)
 ```
 
 
-Úplná klasifikace
+# Úplná klasifikace
 
 ```{r}
 kwr <- kwr |> 
+  kwr_prune_long_queries(longer_than = 70) |> 
+  kwr_prune("recipes/prune.yml") |> 
   kwr_classify("recipes/brand.yml") |> 
   kwr_classify("recipes/model.yml")
 ```
@@ -367,3 +278,9 @@ kwr |>
   kwr_unclassified_queries() |> 
   kwr_ngrams()
 ```
+
+```{r}
+kwr |> kwr_dimension_table(brand)
+kwr |> kwr_dimension_table(model)
+```
+
